@@ -1,0 +1,60 @@
+# ── Extend GitLeaks default ruleset ────────────────────────────
+# This activates 100+ built-in rules for AWS keys, GitHub tokens,
+# Stripe keys, Slack webhooks, private keys, JWT secrets, and more
+[extend]
+useDefault = true
+
+# ── Custom rule: Anthropic API key ─────────────────────────────
+# Built-in rules don't know about Anthropic yet — add it manually
+[[rules]]
+id          = "anthropic-api-key"
+description = "Anthropic API Key"
+regex       = '''sk-ant-api[0-9A-Za-z\-_]{40,}'''
+tags        = ["key", "anthropic", "ai"]
+
+# ── Custom rule: Generic high-entropy secrets ───────────────────
+# Catches secrets that look like random strings assigned to
+# common variable names (SECRET, TOKEN, PASSWORD etc.)
+[[rules]]
+id          = "generic-secret-assignment"
+description = "Generic secret assigned to a variable"
+regex       = '''(?i)(secret|password|passwd|token|apikey|api_key)\s*=\s*["\'][A-Za-z0-9+/]{20,}["\']'''
+tags        = ["secret", "generic"]
+
+# ── Custom rule: AWS access key pattern ────────────────────────
+# Built-in catches AKIA... but this catches keys assigned to vars
+[[rules]]
+id          = "aws-key-in-variable"
+description = "AWS key assigned to variable"
+regex       = '''(?i)(aws_access_key|aws_secret)\s*=\s*["\'][A-Z0-9+/]{20,}["\']'''
+tags        = ["aws", "key"]
+
+# ── Custom rule: .env file content leaked into code ─────────────
+[[rules]]
+id          = "dotenv-content"
+description = "Possible .env file content committed"
+regex       = '''(?m)^[A-Z_]+=.{8,}$'''
+path        = '''\.env'''
+tags        = ["env", "config"]
+
+# ── Allowlist: safe values to ignore ───────────────────────────
+# Add patterns here that are intentionally in your code
+# (test placeholders, example values, docs)
+[allowlist]
+description = "Known safe placeholder values"
+regexes = [
+    '''sk-ant-REPLACE_ME''',
+    '''sk-ant-EXAMPLE''',
+    '''YOUR_API_KEY_HERE''',
+    '''PLACEHOLDER''',
+    '''your-secret-key''',
+    '''changeme''',
+    '''example\.com''',
+]
+
+# Ignore specific paths entirely
+paths = [
+    '''\.gitleaks\.toml''',
+    '''tests/''',
+    '''\.md$''',
+]

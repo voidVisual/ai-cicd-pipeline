@@ -1,0 +1,103 @@
+rules:
+
+  # ── CRITICAL: SQL Injection ──────────────────────────────────
+  # Catches string concatenation in SQL queries
+  - id: sql-injection-string-concat
+    patterns:
+      - pattern: cursor.execute($Q + $I)
+      - pattern: cursor.execute($Q % $I)
+      - pattern: cursor.execute(f"... {$I} ...")
+    message: "SQL injection risk — use parameterized queries: cursor.execute(query, (value,))"
+    languages: [python]
+    severity: ERROR
+
+  # ── CRITICAL: Hardcoded passwords ───────────────────────────
+  - id: hardcoded-password-string
+    patterns:
+      - pattern: password = "..."
+      - pattern: passwd = "..."
+      - pattern: PASSWORD = "..."
+    message: "Hardcoded password — use environment variables: os.environ['PASSWORD']"
+    languages: [python]
+    severity: ERROR
+
+  # ── CRITICAL: Hardcoded secrets / tokens ────────────────────
+  - id: hardcoded-secret-token
+    patterns:
+      - pattern: secret = "..."
+      - pattern: api_key = "..."
+      - pattern: API_KEY = "..."
+      - pattern: SECRET_KEY = "..."
+    message: "Hardcoded secret — use environment variables or AWS Secrets Manager"
+    languages: [python]
+    severity: ERROR
+
+  # ── HIGH: Insecure deserialization ──────────────────────────
+  # pickle.loads on untrusted data = arbitrary code execution
+  - id: insecure-pickle-loads
+    pattern: pickle.loads($DATA)
+    message: "pickle.loads on untrusted data can execute arbitrary code — use JSON instead"
+    languages: [python]
+    severity: ERROR
+
+  # ── HIGH: Shell injection ────────────────────────────────────
+  # shell=True with user input = command injection
+  - id: subprocess-shell-true
+    pattern: subprocess.run(..., shell=True, ...)
+    message: "shell=True with user input risks command injection — use list args instead"
+    languages: [python]
+    severity: ERROR
+
+  # ── HIGH: Weak hashing algorithms ───────────────────────────
+  - id: weak-hash-md5
+    patterns:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+    message: "MD5/SHA1 are cryptographically broken — use hashlib.sha256() or better"
+    languages: [python]
+    severity: ERROR
+
+  # ── HIGH: Binding to all interfaces ─────────────────────────
+  # 0.0.0.0 in prod code exposes service on all network interfaces
+  - id: bind-all-interfaces
+    pattern: socket.bind(("0.0.0.0", ...))
+    message: "Binding to 0.0.0.0 exposes service on all interfaces — be intentional about this"
+    languages: [python]
+    severity: WARNING
+
+  # ── MEDIUM: Debug mode in production ────────────────────────
+  - id: debug-mode-enabled
+    patterns:
+      - pattern: DEBUG = True
+      - pattern: debug=True
+    message: "Debug mode must be False in production — use environment variable"
+    languages: [python]
+    severity: WARNING
+
+  # ── MEDIUM: Overly broad exception handling ──────────────────
+  # Swallowing all exceptions hides real errors and security issues
+  - id: broad-except-pass
+    pattern: |
+      try:
+        ...
+      except Exception:
+        pass
+    message: "Catching all exceptions silently hides errors — log or re-raise"
+    languages: [python]
+    severity: WARNING
+
+  # ── MEDIUM: assert used for security checks ──────────────────
+  # assert is stripped in optimized Python (-O flag) — never use for auth
+  - id: assert-used-for-auth
+    pattern: assert $USER.is_authenticated
+    message: "assert is removed in optimized Python — use proper auth checks instead"
+    languages: [python]
+    severity: WARNING
+
+  # ── INFO: print() left in production code ───────────────────
+  # Not a security issue but a code quality signal
+  - id: print-in-production
+    pattern: print(...)
+    message: "Use logging module instead of print() for production code"
+    languages: [python]
+    severity: INFO

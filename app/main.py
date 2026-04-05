@@ -23,6 +23,11 @@ def read_root() -> dict:
     return {"message": "AI-Powered CI/CD Pipeline"}
 
 
+@app.get("/health")
+def health_check() -> dict:
+    return {"status": "ok"}
+
+
 @app.get("/items", response_model=List[Item])
 def list_items() -> List[Item]:
     return app.state.items

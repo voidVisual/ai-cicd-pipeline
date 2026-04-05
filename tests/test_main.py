@@ -122,5 +122,12 @@ def test_openapi_includes_three_routes() -> None:
 
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert set(paths) == {"/", "/items"}
+    assert set(paths) == {"/", "/health", "/items"}
     assert set(paths["/items"]) == {"get", "post"}
+
+
+def test_health_returns_ok() -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

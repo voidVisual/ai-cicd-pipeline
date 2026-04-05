@@ -1,0 +1,45 @@
+# Git internals — never needed inside an image
+.git
+.gitignore
+.github
+
+# Secrets — critical: these must NEVER end up in an image
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.cert
+secrets/
+
+# Python cache — not needed, just bloats the image
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist/
+build/
+
+# Tests — not needed at runtime
+tests/
+pytest.ini
+.pytest_cache/
+coverage.xml
+.coverage
+
+# Security tool configs — no need inside the container
+.gitleaks.toml
+.semgrep.yml
+
+# Scripts folder — reviewer script is a CI tool, not runtime code
+scripts/
+
+# Docs and editor noise
+README.md
+*.md
+.DS_Store
+.vscode/
+.idea/
