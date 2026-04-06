@@ -12,7 +12,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: ai-cicd-app # Must match the ECR repo you created
   ECS_CLUSTER: ai-cicd-cluster
-  ECS_SERVICE: ai-cicd-task-service-3eh17b5q
+  ECS_SERVICE: ai-cicd-service
 
 # ===============================================================
 # JOB 1 - Security scan (runs on every PR)
