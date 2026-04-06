@@ -1,0 +1,184 @@
+name: AI-powered secure CI/CD pipeline
+
+# -- Triggers ---------------------------------------------------
+on:
+  pull_request:
+    branches: [main] # Security scan on every PR targeting main
+  push:
+    branches: [main] # Build + deploy when code merges to main
+
+# -- Shared environment variables -------------------------------
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: ai-cicd-app # Must match the ECR repo you created
+  ECS_CLUSTER: ai-cicd-cluster
+  ECS_SERVICE: ai-cicd-service
+
+# ===============================================================
+# JOB 1 - Security scan (runs on every PR)
+# ===============================================================
+jobs:
+  security-scan:
+    name: Security scanning
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Read repo code
+      pull-requests: write # Post PR comments
+
+    steps:
+      # -- Checkout full git history ----------------------------
+      # fetch-depth: 0 is required for GitLeaks to scan all commits
+      # Without this, GitLeaks only sees the latest commit
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -- Python setup -----------------------------------------
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip" # Cache pip downloads between runs
+
+      # -- Install Python dependencies ---------------------------
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # -- Stage 1: Unit tests ----------------------------------
+      # Fail fast - no point scanning if tests do not pass
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+      # -- Stage 2: GitLeaks secret scan ------------------------
+      # Scans entire git history for secrets, tokens, API keys
+      # Fails immediately if a real secret is found
+      - name: GitLeaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      # -- Stage 3: Semgrep SAST --------------------------------
+      # exit-code 0 here - Semgrep findings go to Claude,
+      # Claude decides whether to block (not a hard fail here)
+      - name: Semgrep SAST scan
+        run: |
+          pip install semgrep
+          semgrep --config .semgrep.yml app/ \
+            --json --output semgrep-results.json \
+            --no-rewrite-rule-ids || true
+          echo "Semgrep scan complete"
+          cat semgrep-results.json
+
+      # -- Stage 4: Build Docker image for scanning -------------
+      # Build the image so Trivy can scan it
+      # This image is local only - not pushed to ECR yet
+      - name: Build Docker image
+        run: docker build -t scan-target:pr .
+
+      # -- Stage 5: Trivy CVE scan ------------------------------
+      # Scans the image for known vulnerabilities
+      # exit-code 0 - findings go to Claude for judgment
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: scan-target:pr
+          format: json
+          output: trivy-results.json
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      # -- Stage 6: Claude AI security review -------------------
+      # Reads scan results -> calls Claude API -> posts PR comment
+      # Exits with code 1 if Claude says CRITICAL/BLOCK MERGE
+      # Only runs on pull_request events (not on push to main)
+      - name: Claude AI security review
+        if: github.event_name == 'pull_request'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/ai_security_review.py
+
+# ===============================================================
+# JOB 2 - Build and push to ECR (push to main only)
+# ===============================================================
+  build-and-push:
+    name: Build and push to ECR
+    runs-on: ubuntu-latest
+    needs: security-scan # Only runs if Job 1 passed
+    if: github.ref == 'refs/heads/main' # Only on push to main
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -- Configure AWS credentials -----------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -- Login to ECR -----------------------------------------
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -- Build, tag, and push image ----------------------------
+      # Tagged with git commit SHA - makes every deploy traceable
+      # Also tags as 'latest' for convenience
+      - name: Build, tag, and push image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                     $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Image pushed: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+# ===============================================================
+# JOB 3 - Deploy to ECS Fargate
+# ===============================================================
+  deploy:
+    name: Deploy to ECS Fargate
+    runs-on: ubuntu-latest
+    needs: build-and-push # Only runs if Job 2 passed
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -- Trigger ECS rolling deployment -----------------------
+      # force-new-deployment pulls the latest image from ECR
+      # ECS replaces old containers one by one - zero downtime
+      - name: Deploy to ECS Fargate
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment
+          echo "Deployment triggered - ECS is pulling new image"
+
+      # -- Wait for deployment to stabilize ---------------------
+      # Waits until new tasks are running and old ones are stopped
+      # Times out after 10 minutes - fails pipeline if ECS crashes
+      - name: Wait for deployment to complete
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Deployment complete - service is stable"
