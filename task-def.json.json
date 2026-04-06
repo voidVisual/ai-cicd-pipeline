@@ -1,0 +1,21 @@
+{
+  "family": "ai-cicd-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::347555215371:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "ai-cicd-app",
+      "image": "347555215371.dkr.ecr.us-east-1.amazonaws.com/ai-cicd-app:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true
+    }
+  ]
+}
