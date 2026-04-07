@@ -85,7 +85,6 @@ def review_with_claude(diff: str, scan_results: dict) -> str:
     so the exit-code logic below can parse it reliably.
     """
     genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-1.5-flash")
 
     # Build the scan summary block
     scan_summary = "\n\n".join(
@@ -112,8 +111,47 @@ Respond in exactly this format:
 **RECOMMENDATION:** [BLOCK MERGE / APPROVE WITH NOTES / APPROVE]
 **REASON:** One sentence explanation."""
 
-    response = model.generate_content(prompt)
-    return response.text
+    def try_generate(model_name: str) -> str | None:
+        full_name = model_name if model_name.startswith("models/") else f"models/{model_name}"
+        try:
+            model = genai.GenerativeModel(full_name)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            msg = str(e).lower()
+            if "not found" in msg or "not supported" in msg:
+                return None
+            raise
+
+    # Use a modern default first, then fallback to known aliases.
+    preferred = [
+        os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-002",
+    ]
+
+    for name in preferred:
+        review = try_generate(name)
+        if review:
+            return review
+
+    # Last fallback: pick the first available flash model that supports generateContent.
+    for model_info in genai.list_models():
+        methods = getattr(model_info, "supported_generation_methods", []) or []
+        if "generateContent" not in methods:
+            continue
+        model_name = getattr(model_info, "name", "")
+        if "flash" not in model_name.lower():
+            continue
+        review = try_generate(model_name)
+        if review:
+            return review
+
+    raise RuntimeError(
+        "No compatible Gemini model found. Set GEMINI_MODEL to a valid model "
+        "(for example gemini-2.0-flash) and verify the API key/project access."
+    )
 
 
 # ── Step 4: Post comment to GitHub PR ───────────────────────────
