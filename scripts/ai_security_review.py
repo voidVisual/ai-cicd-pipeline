@@ -14,7 +14,7 @@ import json
 import subprocess
 import urllib.request
 import urllib.error
-import anthropic
+import google.generativeai as genai
 
 
 # ── Config ──────────────────────────────────────────────────────
@@ -84,9 +84,8 @@ def review_with_claude(diff: str, scan_results: dict) -> str:
     The structured prompt forces a consistent output format
     so the exit-code logic below can parse it reliably.
     """
-    client = anthropic.Anthropic(
-        api_key=os.environ["ANTHROPIC_API_KEY"]
-    )
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
     # Build the scan summary block
     scan_summary = "\n\n".join(
@@ -95,47 +94,26 @@ def review_with_claude(diff: str, scan_results: dict) -> str:
     )
 
     prompt = f"""You are a senior DevSecOps engineer doing a security review of a pull request.
-Analyse the information below and return a structured verdict.
 
----
-## PR CHANGES (git diff --stat)
+## PR CHANGES
 {diff}
 
----
 ## SECURITY SCAN RESULTS
 {scan_summary}
 
----
-## YOUR REVIEW
-
-Respond in exactly this format (keep each section brief):
+Respond in exactly this format:
 
 **RISK LEVEL:** [CRITICAL / HIGH / MEDIUM / LOW / CLEAN]
-
-**SUMMARY:** 2-3 sentences. Plain English. What does this PR do and what is the overall security posture?
-
+**SUMMARY:** 2-3 sentences plain English summary.
 **TOP FINDINGS:**
-- Finding 1 (or "None" if clean)
+- Finding 1 (or None)
 - Finding 2
 - Finding 3
-
 **RECOMMENDATION:** [BLOCK MERGE / APPROVE WITH NOTES / APPROVE]
+**REASON:** One sentence explanation."""
 
-**REASON:** One sentence explaining your recommendation.
-
-Rules:
-- CRITICAL or HIGH risk → always BLOCK MERGE
-- MEDIUM risk → APPROVE WITH NOTES
-- LOW or CLEAN → APPROVE
-- Be specific about file names and line numbers if visible in scan output
-- Do not invent findings not present in the scan data"""
-
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
+    response = model.generate_content(prompt)
+    return response.text
 
 
 # ── Step 4: Post comment to GitHub PR ───────────────────────────
