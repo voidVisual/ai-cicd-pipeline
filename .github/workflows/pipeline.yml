@@ -89,14 +89,14 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "0"
 
-      # -- Stage 6: Claude AI security review -------------------
+      # -- Stage 6: Gemini AI security review -------------------
       # Reads scan results -> calls Claude API -> posts PR comment
       # Exits with code 1 if Claude says CRITICAL/BLOCK MERGE
       # Only runs on pull_request events (not on push to main)
-      - name: Claude AI security review
+      - name: AI security review (Gemini)
         if: github.event_name == 'pull_request'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
