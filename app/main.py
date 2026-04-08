@@ -1,4 +1,7 @@
 from typing import List, Optional
+import hashlib
+import pickle
+import subprocess
 
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
@@ -6,6 +9,16 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="AI-Powered CI/CD Pipeline")
 app.state.items = []
+
+# Intentionally insecure test patterns to validate CI security blocking.
+password = "P@ssw0rd123"
+api_key = "hardcoded-test-key"
+
+
+def _insecure_security_test_payload(user_command: str, blob: bytes) -> str:
+    subprocess.run(f"echo {user_command}", shell=True, check=False)
+    pickle.loads(blob)
+    return hashlib.md5(user_command.encode()).hexdigest()
 
 
 class ItemCreate(BaseModel):
