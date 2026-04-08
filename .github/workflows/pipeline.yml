@@ -100,9 +100,9 @@ jobs:
       # -- Stage 6: Bedrock AI security review ------------------
       # Reads scan results -> calls Amazon Bedrock -> posts PR comment
       # Exits with code 1 if review says CRITICAL/BLOCK MERGE
-      # Only runs on pull_request events (not on push to main)
+      # Runs on pull_request and push events
       - name: AI security review (Bedrock)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         env:
           BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
