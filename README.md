@@ -1,5 +1,47 @@
 # AI-Powered CI/CD Pipeline
 
+This project is a production-style DevSecOps pipeline for a FastAPI application. It combines automated testing, multi-layer security scanning, AI-assisted security review, container build and push to Amazon ECR, and rolling deployment to Amazon ECS Fargate through GitHub Actions.
+
+## Project Summary
+
+- Goal: Ship code safely with security gates before deployment.
+- Stack: FastAPI, Docker, GitHub Actions, AWS ECR, AWS ECS Fargate, Bedrock AI review.
+- Security controls: Pytest, GitLeaks, Semgrep, Trivy, and AI PR risk review.
+- Deployment model: Build once, push immutable image tags, then roll out service update.
+
+## Required Setup
+
+### Local Requirements
+
+- Python 3.11+
+- Docker Desktop
+- Git
+- Optional but recommended CLIs for local checks:
+    - gitleaks
+    - semgrep
+    - trivy
+
+### AWS Requirements
+
+- AWS account and target region configured.
+- ECR repository created for this service image.
+- ECS cluster and ECS service created (Fargate launch type).
+- IAM user/role with minimum required permissions for:
+    - ECR push/pull
+    - ECS service update
+    - Bedrock model invoke
+
+### GitHub Repository Requirements
+
+Configure these repository secrets:
+
+- AWS_ACCESS_KEY_ID
+- AWS_SECRET_ACCESS_KEY
+
+Optional variable/environment override:
+
+- BEDROCK_MODEL_ID (default used by workflow: amazon.nova-lite-v1:0)
+
 ## Getting Started
 
 ### Install Dependencies
@@ -53,6 +95,30 @@ Notes:
 
 This project uses GitHub Actions for automated security scanning, building, and deployment to AWS ECS Fargate.
 
+## Architecture Diagram
+
+![DevOps CI/CD pipeline architecture](docs/screenshots/devops-cicd-architecture.jpeg)
+
+## Full Workflow Diagram
+
+![Vertical end-to-end CI/CD workflow](docs/screenshots/vertical-cicd-workflow.jpeg)
+
+## GitHub Actions Proof
+
+Below are screenshots of real GitHub Actions runs for visitors to verify pipeline behavior:
+
+### 1) Security Scan Blocked on Critical Risk
+
+![Security scan failed due to critical findings](docs/screenshots/security-scan-failed.png)
+
+### 2) Bedrock Security Review Passed
+
+![Bedrock AI security review passed](docs/screenshots/bedrock-review-passed.png)
+
+### 3) Full Pipeline Success
+
+![Complete pipeline success in GitHub Actions](docs/screenshots/full-pipeline-success.png)
+
 ### Workflow Stages
 
 **Security Scan** (runs on all PRs)
@@ -90,44 +156,6 @@ For GitHub Actions, set these repository secrets:
 
 Optional workflow variable/environment override:
 - `BEDROCK_MODEL_ID` - Bedrock model ID for security review (default: `amazon.nova-lite-v1:0`)
-
-## Architecture
-
-```
-┌─────────────────────┐
-│   GitHub Push       │
-│   to main branch    │
-└──────────┬──────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│  Security Scan Job       │◄─── Trivy, Semgrep, GitLeaks
-│  - Unit Tests            │     Bedrock AI Review
-│  - Security Checks       │
-└──────────┬───────────────┘
-           │ (Passed)
-           ▼
-┌──────────────────────────┐
-│  Build & Push Job        │
-│  - Docker Build          │
-│  - ECR Push              │
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│  Deploy Job              │
-│  - ECS Service Update    │
-│  - Rolling Deployment    │
-│  - Health Check Wait     │
-└──────────────────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│   Running on ECS Fargate │
-│   - Auto-scaling         │
-│   - Health monitored     │
-└──────────────────────────┘
-```
 
 ## Troubleshooting
 
