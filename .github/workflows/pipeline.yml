@@ -60,8 +60,8 @@ jobs:
           GITLEAKS_CONFIG: .gitleaks.toml
 
       # -- Stage 3: Semgrep SAST --------------------------------
-      # exit-code 0 here - Semgrep findings go to Claude,
-      # Claude decides whether to block (not a hard fail here)
+      # exit-code 0 here - Semgrep findings go to AI review,
+      # the model decides whether to block (not a hard fail here)
       - name: Semgrep SAST scan
         run: |
           pip install semgrep
@@ -71,6 +71,14 @@ jobs:
           echo "Semgrep scan complete"
           cat semgrep-results.json
 
+      # -- Configure AWS credentials for Bedrock call -----------
+      - name: Configure AWS credentials for Bedrock
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       # -- Stage 4: Build Docker image for scanning -------------
       # Build the image so Trivy can scan it
       # This image is local only - not pushed to ECR yet
@@ -79,7 +87,7 @@ jobs:
 
       # -- Stage 5: Trivy CVE scan ------------------------------
       # Scans the image for known vulnerabilities
-      # exit-code 0 - findings go to Claude for judgment
+      # exit-code 0 - findings go to AI review for judgment
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -89,14 +97,14 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "0"
 
-      # -- Stage 6: Gemini AI security review -------------------
-      # Reads scan results -> calls Claude API -> posts PR comment
-      # Exits with code 1 if Claude says CRITICAL/BLOCK MERGE
+      # -- Stage 6: Bedrock AI security review ------------------
+      # Reads scan results -> calls Amazon Bedrock -> posts PR comment
+      # Exits with code 1 if review says CRITICAL/BLOCK MERGE
       # Only runs on pull_request events (not on push to main)
-      - name: AI security review (Gemini)
+      - name: AI security review (Bedrock)
         if: github.event_name == 'pull_request'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}

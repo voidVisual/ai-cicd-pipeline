@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-AI Security Reviewer — calls Claude API with scan results
+AI Security Reviewer — calls Amazon Bedrock with scan results
 and posts a security verdict as a GitHub PR comment.
 
 Called by GitHub Actions on every pull_request event.
-Exits with code 1 if Claude returns CRITICAL / BLOCK MERGE
+Exits with code 1 if the model returns CRITICAL / BLOCK MERGE
 so the pipeline fails and the PR cannot be merged.
 """
 
@@ -14,13 +14,12 @@ import json
 import subprocess
 import urllib.request
 import urllib.error
-import google.generativeai as genai
+import boto3
 
 
 # ── Config ──────────────────────────────────────────────────────
 
-MODEL         = "claude-haiku-4-5"        # Fast + cheap for CI. Switch to
-                                            # claude-sonnet-4-5 for richer reviews
+MODEL         = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
 MAX_TOKENS    = 1000                        # Enough for a thorough review
 DIFF_LIMIT    = 3000                        # Chars — keeps prompt cost low
 SCAN_LIMIT    = 2000                        # Chars per scan file
@@ -32,7 +31,7 @@ def get_pr_diff() -> str:
     """
     Returns a summary of what changed in this PR.
     Uses --stat (file names + line counts) not the full diff —
-    keeps token usage low while still giving Claude useful context.
+    keeps token usage low while still giving the reviewer useful context.
     """
     try:
         result = subprocess.run(
@@ -67,7 +66,7 @@ def read_scan_results() -> dict:
         if os.path.exists(fname):
             with open(fname, "r") as f:
                 raw = f.read()
-            # Truncate large scan files — Claude doesn't need
+            # Truncate large scan files — the reviewer does not need
             # every single CVE, just the key findings
             results[label] = raw[:SCAN_LIMIT]
         else:
@@ -75,17 +74,40 @@ def read_scan_results() -> dict:
     return results
 
 
-# ── Step 3: Call Claude API ─────────────────────────────────────
+# ── Step 3: Call Amazon Bedrock ─────────────────────────────────
 
-def review_with_claude(diff: str, scan_results: dict) -> str:
+def _extract_bedrock_text(model_id: str, payload: dict) -> str:
     """
-    Sends the PR diff + all scan results to Claude.
-    Returns Claude's plain-text security verdict.
+    Extract plain text from common Bedrock response shapes.
+    Supports Amazon model response shapes.
+    """
+    if model_id.startswith("amazon."):
+        content = (
+            payload.get("output", {})
+            .get("message", {})
+            .get("content", [])
+        )
+        return "\n".join(
+            block.get("text", "") for block in content if isinstance(block, dict)
+        ).strip()
+
+    # Fallback for unknown providers
+    return (
+        payload.get("outputText")
+        or payload.get("completion")
+        or json.dumps(payload)[:1000]
+    )
+
+
+def review_with_bedrock(diff: str, scan_results: dict) -> str:
+    """
+    Sends the PR diff + all scan results to Amazon Bedrock.
+    Returns the model's plain-text security verdict.
     The structured prompt forces a consistent output format
     so the exit-code logic below can parse it reliably.
     """
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    bedrock = boto3.client("bedrock-runtime", region_name=region)
 
     # Build the scan summary block
     scan_summary = "\n\n".join(
@@ -112,15 +134,45 @@ Respond in exactly this format:
 **RECOMMENDATION:** [BLOCK MERGE / APPROVE WITH NOTES / APPROVE]
 **REASON:** One sentence explanation."""
 
-    response = model.generate_content(prompt)
-    return response.text
+    if MODEL.startswith("amazon."):
+        body = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"text": prompt}],
+                }
+            ],
+            "inferenceConfig": {
+                "maxTokens": MAX_TOKENS,
+                "temperature": 0.2,
+            },
+        }
+    else:
+        raise ValueError(
+            f"Unsupported BEDROCK_MODEL_ID '{MODEL}'. Use an Amazon Bedrock model ID such as amazon.nova-lite-v1:0."
+        )
+
+    response = bedrock.invoke_model(
+        modelId=MODEL,
+        contentType="application/json",
+        accept="application/json",
+        body=json.dumps(body),
+    )
+
+    response_payload = json.loads(response["body"].read())
+    review_text = _extract_bedrock_text(MODEL, response_payload)
+
+    if not review_text:
+        raise RuntimeError("Bedrock returned an empty review response")
+
+    return review_text
 
 
 # ── Step 4: Post comment to GitHub PR ───────────────────────────
 
 def post_pr_comment(review_text: str, pr_number: str, repo: str) -> None:
     """
-    Posts Claude's review as a comment on the GitHub PR
+    Posts the AI review as a comment on the GitHub PR
     using the GitHub REST API.
     Requires GITHUB_TOKEN with pull-requests: write permission
     (automatically provided by GitHub Actions).
@@ -134,9 +186,9 @@ def post_pr_comment(review_text: str, pr_number: str, repo: str) -> None:
 
     body = (
         "## AI Security Review\n\n"
-        "> Automated review powered by Claude (Anthropic API)\n\n"
+        "> Automated review powered by Amazon Bedrock\n\n"
         + review_text
-        + "\n\n---\n*Pipeline: GitLeaks → Semgrep → Trivy → Claude AI Review*"
+        + "\n\n---\n*Pipeline: GitLeaks -> Semgrep -> Trivy -> Bedrock AI Review*"
     )
 
     payload = json.dumps({"body": body}).encode("utf-8")
@@ -165,7 +217,7 @@ def post_pr_comment(review_text: str, pr_number: str, repo: str) -> None:
 def should_fail_pipeline(review_text: str) -> bool:
     """
     Returns True if the pipeline should fail (exit 1).
-    Looks for BLOCK MERGE or CRITICAL / HIGH risk in Claude's output.
+    Looks for BLOCK MERGE or CRITICAL / HIGH risk in model output.
     This is what actually prevents a bad PR from being merged.
     """
     upper = review_text.upper()
@@ -192,12 +244,12 @@ if __name__ == "__main__":
     print(f"Diff length:  {len(diff)} chars")
     print(f"Scan files:   {list(scan_results.keys())}")
 
-    # Ask Claude
-    print("\nCalling Claude API...")
-    review = review_with_claude(diff, scan_results)
+    # Ask Bedrock
+    print(f"\nCalling Amazon Bedrock model: {MODEL}...")
+    review = review_with_bedrock(diff, scan_results)
 
     # Print to Actions log (visible in GitHub Actions output)
-    print("\n=== Claude's Review ===")
+    print("\n=== AI Review ===")
     print(review)
     print("======================")
 
@@ -213,8 +265,8 @@ if __name__ == "__main__":
 
     # Pass or fail the pipeline
     if should_fail_pipeline(review):
-        print("\nClaude flagged CRITICAL/HIGH risk — failing pipeline.")
+        print("\nAI review flagged CRITICAL/HIGH risk - failing pipeline.")
         sys.exit(1)
     else:
-        print("\nClaude approved — pipeline continues.")
+        print("\nAI review approved - pipeline continues.")
         sys.exit(0)

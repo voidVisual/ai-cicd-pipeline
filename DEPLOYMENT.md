@@ -57,7 +57,7 @@ The GitHub Actions workflow automatically:
    - GitLeaks secret scanning
    - Semgrep SAST analysis
    - Trivy CVE scanning
-   - Claude AI security review
+  - Amazon Bedrock AI security review
 
 2. **Build & Push** - Runs on merge to main
    - Builds Docker image

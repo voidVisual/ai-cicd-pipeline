@@ -60,7 +60,7 @@ This project uses GitHub Actions for automated security scanning, building, and 
 - Secret detection via GitLeaks
 - SAST analysis via Semgrep
 - CVE scanning via Trivy
-- AI security review via Claude API
+- AI security review via Amazon Bedrock
 
 **Build & Push** (runs on merge to main)
 - Docker image build
@@ -87,7 +87,9 @@ For detailed ECS deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 For GitHub Actions, set these repository secrets:
 - `AWS_ACCESS_KEY_ID` - AWS IAM user access key
 - `AWS_SECRET_ACCESS_KEY` - AWS IAM user secret key
-- `ANTHROPIC_API_KEY` - Claude API key for security review
+
+Optional workflow variable/environment override:
+- `BEDROCK_MODEL_ID` - Bedrock model ID for security review (default: `amazon.nova-lite-v1:0`)
 
 ## Architecture
 
@@ -100,7 +102,7 @@ For GitHub Actions, set these repository secrets:
            ▼
 ┌──────────────────────────┐
 │  Security Scan Job       │◄─── Trivy, Semgrep, GitLeaks
-│  - Unit Tests            │     Claude AI Review
+│  - Unit Tests            │     Bedrock AI Review
 │  - Security Checks       │
 └──────────┬───────────────┘
            │ (Passed)
@@ -136,9 +138,10 @@ For GitHub Actions, set these repository secrets:
 3. Confirm ECS cluster and service exist in the correct region
 4. Review ECS task logs in CloudWatch
 
-### Claude AI Review Not Running
+### Bedrock AI Review Not Running
 
-Claude review only runs on pull requests to `main`, not direct pushes. Create a feature branch and open a PR to trigger the review.
+Bedrock review only runs on pull requests to `main`, not direct pushes. Create a feature branch and open a PR to trigger the review.
+Also verify the AWS credentials configured in GitHub Secrets have permission for `bedrock:InvokeModel` in your selected region.
 
 ## License
 
