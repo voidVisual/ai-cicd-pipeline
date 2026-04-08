@@ -9,6 +9,31 @@ This project is a production-style DevSecOps pipeline for a FastAPI application.
 - Security controls: Pytest, GitLeaks, Semgrep, Trivy, and AI PR risk review.
 - Deployment model: Build once, push immutable image tags, then roll out service update.
 
+## Architecture Diagram
+
+![DevOps CI/CD pipeline architecture](docs/screenshots/devops-cicd-architecture.jpeg)
+
+## Full Workflow Diagram
+
+![Vertical end-to-end CI/CD workflow](docs/screenshots/vertical-cicd-workflow.jpeg)
+
+## GitHub Actions Proof
+
+Below are screenshots of real GitHub Actions runs for visitors to verify pipeline behavior:
+
+### 1) Security Scan Blocked on Critical Risk
+
+![Security scan failed due to critical findings](docs/screenshots/security-scan-failed.png)
+
+### 2) Bedrock Security Review Passed
+
+![Bedrock AI security review passed](docs/screenshots/bedrock-review-passed.png)
+
+### 3) Full Pipeline Success
+
+![Complete pipeline success in GitHub Actions](docs/screenshots/full-pipeline-success.png)
+
+
 ## Required Setup
 
 ### Local Requirements
@@ -95,29 +120,6 @@ Notes:
 
 This project uses GitHub Actions for automated security scanning, building, and deployment to AWS ECS Fargate.
 
-## Architecture Diagram
-
-![DevOps CI/CD pipeline architecture](docs/screenshots/devops-cicd-architecture.jpeg)
-
-## Full Workflow Diagram
-
-![Vertical end-to-end CI/CD workflow](docs/screenshots/vertical-cicd-workflow.jpeg)
-
-## GitHub Actions Proof
-
-Below are screenshots of real GitHub Actions runs for visitors to verify pipeline behavior:
-
-### 1) Security Scan Blocked on Critical Risk
-
-![Security scan failed due to critical findings](docs/screenshots/security-scan-failed.png)
-
-### 2) Bedrock Security Review Passed
-
-![Bedrock AI security review passed](docs/screenshots/bedrock-review-passed.png)
-
-### 3) Full Pipeline Success
-
-![Complete pipeline success in GitHub Actions](docs/screenshots/full-pipeline-success.png)
 
 ### Workflow Stages
 
@@ -171,6 +173,4 @@ Optional workflow variable/environment override:
 Bedrock review only runs on pull requests to `main`, not direct pushes. Create a feature branch and open a PR to trigger the review.
 Also verify the AWS credentials configured in GitHub Secrets have permission for `bedrock:InvokeModel` in your selected region.
 
-## License
 
-MIT
